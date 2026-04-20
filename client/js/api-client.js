@@ -130,6 +130,10 @@ const api = {
   logout() {
     clearSession();
   },
+  forgotPassword: (email) =>
+    apiPost("/auth/forgot-password", { email }, { auth: false }),
+  resetPassword: (token, newPassword) =>
+    apiPost("/auth/reset-password", { token, new_password: newPassword }, { auth: false }),
 
   // Cliente propio
   getMyClient: () => apiGet("/clients/me"),

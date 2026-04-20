@@ -129,4 +129,19 @@ CREATE TABLE IF NOT EXISTS daily_operations (
 );
 CREATE INDEX IF NOT EXISTS idx_daily_date ON daily_operations (date DESC);
 
+-- =====================================================
+-- Tabla: password_reset_tokens
+-- Almacena el hash (no el token en claro) + expiracion.
+-- =====================================================
+CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  token_hash  VARCHAR(128) NOT NULL UNIQUE,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pwreset_user ON password_reset_tokens (user_id);
+CREATE INDEX IF NOT EXISTS idx_pwreset_expires ON password_reset_tokens (expires_at);
+
 COMMIT;
