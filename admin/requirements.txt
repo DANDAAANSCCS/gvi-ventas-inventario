@@ -1,0 +1,8 @@
+supabase>=2.28.0
+requests==2.31.0
+pydantic==2.13.0
+Pillow>=11.2.1,<12
+tkcalendar==1.6.1
+matplotlib>=3.10,<4
+# ¡NO CAMBIAR! Esta versión es obligatoria para compatibilidad con supabase/realtime
+websockets==11.0.3

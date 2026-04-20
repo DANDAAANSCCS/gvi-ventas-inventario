@@ -1,0 +1,55 @@
+# Docker compose para desarrollo local.
+# - db:       PostgreSQL 16 con schema.sql montado como init (se ejecuta solo 1a vez)
+# - backend:  FastAPI en :8000
+# - frontend: nginx en :8080 que inyecta API_URL=http://localhost:8000
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gvi
+      POSTGRES_PASSWORD: gvi_pass
+      POSTGRES_DB: gvi
+    ports:
+      - "5432:5432"
+    volumes:
+      - gvi_pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gvi -d gvi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: "postgresql+asyncpg://gvi:gvi_pass@db:5432/gvi"
+      JWT_SECRET: "dev-secret-cambia-en-prod"
+      JWT_ALGORITHM: "HS256"
+      JWT_EXPIRE_MINUTES: "1440"
+      CORS_ORIGINS: "http://localhost:8180"
+      ADMIN_EMAIL: "admin@gvi.com"
+      ADMIN_PASSWORD: "Admin123!"
+    ports:
+      - "8100:8000"
+
+  frontend:
+    build:
+      context: ./client
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      API_URL: "http://localhost:8100"
+    ports:
+      - "8180:80"
+
+volumes:
+  gvi_pgdata:

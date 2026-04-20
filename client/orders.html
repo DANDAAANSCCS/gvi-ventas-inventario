@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Finalizar Pedido — GesVentas</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">🏪 GesVentas</a>
+  <ul class="nav-links">
+    <li><a href="index.html">← Seguir Comprando</a></li>
+    <li><a href="history.html">Historial</a></li>
+    <li data-auth-only style="display:none">
+      <span style="color:#CBD5E1;font-size:.85rem">👤 <span id="user-display"></span></span>
+    </li>
+    <li data-auth-only style="display:none">
+      <button class="btn btn-ghost btn-sm" onclick="logout()">Salir</button>
+    </li>
+  </ul>
+</nav>
+
+<div class="container" style="max-width:960px">
+  <h1 style="margin-bottom:1.5rem">🛒 Finalizar Pedido</h1>
+
+  <div style="display:grid;grid-template-columns:1fr 380px;gap:1.5rem" id="checkout-grid">
+    <div>
+      <div class="card">
+        <div class="card-header">📦 Productos en tu pedido</div>
+        <div class="card-body" id="cart-review">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card" style="margin-bottom:1rem">
+        <div class="card-header">📋 Datos de Envío</div>
+        <div class="card-body" id="shipping-section">
+          <div class="spinner"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">💳 Método de Pago</div>
+        <div class="card-body">
+          <div class="form-group">
+            <select id="payment-method" class="form-control">
+              <option value="Efectivo">💵 Efectivo</option>
+              <option value="Tarjeta">💳 Tarjeta de crédito/débito</option>
+              <option value="Transferencia">🏦 Transferencia bancaria</option>
+              <option value="Otro">🔄 Otro</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notas del pedido</label>
+            <textarea id="order-notes" class="form-control" rows="3"
+                      placeholder="Instrucciones especiales, horario, etc."></textarea>
+          </div>
+
+          <div style="border-top:1px solid var(--border);padding-top:1rem;margin-top:.5rem">
+            <div style="display:flex;justify-content:space-between;
+                        margin-bottom:8px;font-size:.95rem">
+              <span>Subtotal</span>
+              <span id="summary-subtotal">$0.00</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;
+                        margin-bottom:8px;font-size:.95rem;color:var(--text-light)">
+              <span>Envío</span>
+              <span>Gratis</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;
+                        font-size:1.2rem;font-weight:700;
+                        border-top:2px solid var(--border);padding-top:8px">
+              <span>Total</span>
+              <span id="summary-total" style="color:var(--success)">$0.00</span>
+            </div>
+          </div>
+
+          <div id="order-alert" style="margin-top:1rem"></div>
+
+          <button class="btn btn-success btn-block btn-lg" style="margin-top:1rem"
+                  id="place-order-btn" onclick="placeOrder()">
+            ✅ Confirmar Pedido
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/api-client.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/cart.js"></script>
+<script>
+let clientProfile = null;
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const auth = await requireAuth("login.html?next=orders.html");
+  if (!auth) return;
+
+  clientProfile = await getClientProfile();
+  renderCartReview();
+  renderShipping();
+});
+
+function renderCartReview() {
+  const cart = getCart();
+  const section = document.getElementById("cart-review");
+
+  if (cart.length === 0) {
+    section.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🛒</div>
+        <h3>Tu carrito está vacío</h3>
+        <a href="index.html" class="btn btn-primary">Ver Catálogo</a>
+      </div>`;
+    document.getElementById("place-order-btn").disabled = true;
+    return;
+  }
+
+  const total = getCartTotal();
+  section.innerHTML = `
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>Producto</th>
+            <th>Precio</th>
+            <th>Cant.</th>
+            <th>Subtotal</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${cart.map(item => `
+            <tr>
+              <td>${escapeHtml(item.name)}</td>
+              <td>${formatCurrency(item.price)}</td>
+              <td>
+                <div style="display:flex;align-items:center;gap:6px">
+                  <button class="qty-btn" onclick="updateQty('${item.id}',-1)">−</button>
+                  <span>${item.qty}</span>
+                  <button class="qty-btn" onclick="updateQty('${item.id}',1)">+</button>
+                </div>
+              </td>
+              <td>${formatCurrency(item.price * item.qty)}</td>
+              <td>
+                <button class="btn btn-danger btn-sm"
+                  onclick="removeItem('${item.id}')">✕</button>
+              </td>
+            </tr>`).join("")}
+        </tbody>
+      </table>
+    </div>`;
+
+  document.getElementById("summary-subtotal").textContent = formatCurrency(total);
+  document.getElementById("summary-total").textContent = formatCurrency(total);
+}
+
+function renderShipping() {
+  const section = document.getElementById("shipping-section");
+  if (clientProfile) {
+    section.innerHTML = `
+      <p><strong>${escapeHtml(clientProfile.name)}</strong></p>
+      <p style="color:var(--text-light)">${escapeHtml(clientProfile.email || "")}</p>
+      ${clientProfile.phone ? `<p>${escapeHtml(clientProfile.phone)}</p>` : ""}
+      ${clientProfile.address ? `<p>${escapeHtml(clientProfile.address)}</p>` : ""}`;
+  } else {
+    section.innerHTML = `
+      <div class="alert alert-warning">
+        No encontramos tu perfil.
+        <a href="register.html">Completa tu información.</a>
+      </div>`;
+  }
+}
+
+function updateQty(id, delta) {
+  if (delta > 0) {
+    const item = getCart().find(i => String(i.id) === String(id));
+    if (item) addToCart(item, 1);
+  } else {
+    decreaseQty(id);
+  }
+  renderCartReview();
+}
+
+function removeItem(id) {
+  removeFromCart(id);
+  renderCartReview();
+}
+
+async function placeOrder() {
+  const cart = getCart();
+  if (cart.length === 0) {
+    showAlert("Tu carrito está vacío.", "warning"); return;
+  }
+  if (!clientProfile) {
+    showAlert("Completa tu perfil antes de hacer un pedido.", "warning"); return;
+  }
+
+  const btn = document.getElementById("place-order-btn");
+  btn.disabled = true;
+  btn.textContent = "Procesando...";
+
+  try {
+    const payment = document.getElementById("payment-method").value;
+    const notes = document.getElementById("order-notes").value.trim();
+
+    // Un solo POST /orders: backend valida stock, descuenta, registra movimientos (transaccional).
+    const order = await window.api.createOrder({
+      items: cart.map(item => ({
+        product_id: item.id,
+        quantity: item.qty,
+      })),
+      payment_method: payment,
+      notes: notes || null,
+    });
+
+    clearCart();
+    const shortId = String(order.id).slice(0, 8);
+    showAlert(
+      `✅ ¡Pedido #${shortId} creado exitosamente! ` +
+      `Puedes ver el estado en <a href="history.html">tu historial</a>.`,
+      "success"
+    );
+    document.getElementById("cart-review").innerHTML =
+      `<div class="empty-state"><div class="empty-icon">🎉</div>
+        <h3>¡Gracias por tu pedido!</h3></div>`;
+
+  } catch (err) {
+    showAlert("Error al procesar el pedido: " + escapeHtml(err.message), "danger");
+    btn.disabled = false;
+    btn.textContent = "✅ Confirmar Pedido";
+  }
+}
+
+function showAlert(msg, type) {
+  document.getElementById("order-alert").innerHTML =
+    `<div class="alert alert-${type}">${msg}</div>`;
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Node/editor
+node_modules/
+.DS_Store
+.idea/
+.vscode/
+*.log
+
+# Docker
+*.pid
+
+# OS
+Thumbs.db
+
+# Archivos legacy de Supabase (pendiente de mover admin/ a API REST)
+supabase_client.py
+
+# Scripts de desarrollo local
+test_e2e.sh
+/tmp/

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Historial de Compras — GesVentas</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+
+<nav class="navbar">
+  <a href="index.html" class="navbar-brand">🏪 GesVentas</a>
+  <ul class="nav-links">
+    <li><a href="index.html">Catálogo</a></li>
+    <li><a href="orders.html">Nuevo Pedido</a></li>
+    <li data-auth-only style="display:none">
+      <span style="color:#CBD5E1;font-size:.85rem">👤 <span id="user-display"></span></span>
+    </li>
+    <li data-auth-only style="display:none">
+      <button class="btn btn-ghost btn-sm" onclick="logout()">Salir</button>
+    </li>
+  </ul>
+</nav>
+
+<div class="container">
+  <div style="display:flex;justify-content:space-between;align-items:center;
+              margin-bottom:1.5rem">
+    <h1>📋 Historial de Compras</h1>
+    <a href="index.html" class="btn btn-primary">🛍️ Seguir Comprando</a>
+  </div>
+
+  <!-- Filtros -->
+  <div class="filter-bar" style="margin-bottom:1.5rem">
+    <select id="status-filter" class="form-control" style="max-width:180px">
+      <option value="">Todos los estados</option>
+      <option value="pending">Pendiente</option>
+      <option value="completed">Completado</option>
+      <option value="cancelled">Cancelado</option>
+    </select>
+    <input type="date" id="date-from" class="form-control" style="max-width:160px"
+           title="Desde" />
+    <input type="date" id="date-to" class="form-control" style="max-width:160px"
+           title="Hasta" />
+    <button class="btn btn-primary" onclick="applyFilters()">🔍 Filtrar</button>
+    <button class="btn btn-ghost" onclick="resetFilters()">↩ Limpiar</button>
+  </div>
+
+  <!-- Resumen -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+              gap:1rem;margin-bottom:1.5rem" id="summary-cards">
+  </div>
+
+  <!-- Lista de órdenes -->
+  <div id="orders-container">
+    <div class="spinner"></div>
+  </div>
+</div>
+
+<!-- Modal detalle de orden -->
+<div class="modal-backdrop" id="detail-modal" style="display:none"
+     onclick="closeDetailModal(event)">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-header">
+      <span id="detail-title">Detalle del Pedido</span>
+      <button class="modal-close"
+        onclick="document.getElementById('detail-modal').style.display='none'">✕</button>
+    </div>
+    <div class="modal-body" id="detail-body">
+      <div class="spinner"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost"
+        onclick="document.getElementById('detail-modal').style.display='none'">
+        Cerrar
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/api-client.js"></script>
+<script src="js/utils.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/cart.js"></script>
+<script src="js/history.js"></script>
+</body>
+</html>
