@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def _build_reset_email(to_email: str, reset_url: str) -> EmailMessage:
     msg = EmailMessage()
-    msg["Subject"] = "Recupera tu contrasena - GesVentas"
+    msg["Subject"] = "Recupera tu contraseña — GesVentas"
     from_email = settings.smtp_from or settings.smtp_user
     msg["From"] = formataddr((settings.smtp_from_name, from_email))
     msg["To"] = to_email
@@ -19,40 +19,42 @@ def _build_reset_email(to_email: str, reset_url: str) -> EmailMessage:
     # Texto plano para clientes que no soportan HTML.
     msg.set_content(
         "Hola,\n\n"
-        "Recibimos una solicitud para restablecer la contrasena de tu cuenta en GesVentas.\n\n"
-        f"Abre el siguiente enlace para crear una nueva contrasena (valido por {settings.reset_token_expire_minutes} minutos):\n"
+        "Recibimos una solicitud para restablecer la contraseña de tu cuenta en GesVentas.\n\n"
+        f"Abre el siguiente enlace para crear una nueva contraseña (válido por {settings.reset_token_expire_minutes} minutos):\n"
         f"{reset_url}\n\n"
-        "Si no solicitaste este cambio puedes ignorar este correo; tu contrasena actual seguira siendo valida.\n\n"
-        "— Equipo GesVentas"
+        "Si no solicitaste este cambio puedes ignorar este correo; tu contraseña actual seguirá siendo válida.\n\n"
+        "— Equipo GesVentas",
+        charset="utf-8",
     )
 
     html = f"""\
 <!doctype html>
-<html>
+<html lang="es">
+  <head><meta charset="utf-8"/></head>
   <body style="margin:0;padding:24px;background:#f5f6fa;font-family:Arial,Helvetica,sans-serif;color:#333">
     <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;box-shadow:0 2px 8px rgba(0,0,0,.06)">
-      <h1 style="margin:0 0 16px;color:#111;font-size:22px">Recupera tu contrasena</h1>
-      <p style="line-height:1.6">Recibimos una solicitud para restablecer la contrasena de tu cuenta en <strong>GesVentas</strong>.</p>
-      <p style="line-height:1.6">Haz clic en el boton de abajo para crear una nueva contrasena. El enlace es valido por <strong>{settings.reset_token_expire_minutes} minutos</strong>.</p>
+      <h1 style="margin:0 0 16px;color:#111;font-size:22px">Recupera tu contraseña</h1>
+      <p style="line-height:1.6">Recibimos una solicitud para restablecer la contraseña de tu cuenta en <strong>GesVentas</strong>.</p>
+      <p style="line-height:1.6">Haz clic en el botón de abajo para crear una nueva contraseña. El enlace es válido por <strong>{settings.reset_token_expire_minutes} minutos</strong>.</p>
       <p style="text-align:center;margin:28px 0">
         <a href="{reset_url}"
            style="display:inline-block;background:#4f46e5;color:#fff;text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600">
-          Restablecer contrasena
+          Restablecer contraseña
         </a>
       </p>
       <p style="font-size:13px;color:#666;line-height:1.5">
-        Si el boton no funciona, copia y pega esta URL en tu navegador:<br/>
+        Si el botón no funciona, copia y pega esta URL en tu navegador:<br/>
         <span style="word-break:break-all;color:#4f46e5">{reset_url}</span>
       </p>
       <hr style="margin:24px 0;border:none;border-top:1px solid #eee"/>
       <p style="font-size:12px;color:#888;line-height:1.5">
-        Si no solicitaste este cambio puedes ignorar este correo; tu contrasena actual seguira siendo valida.
+        Si no solicitaste este cambio puedes ignorar este correo; tu contraseña actual seguirá siendo válida.
       </p>
     </div>
   </body>
 </html>
 """
-    msg.add_alternative(html, subtype="html")
+    msg.add_alternative(html, subtype="html", charset="utf-8")
     return msg
 
 

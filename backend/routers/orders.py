@@ -83,14 +83,14 @@ async def create_order(
     products_map = {p.id: p for p in result.scalars().all()}
 
     if len(products_map) != len(product_ids):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Algun producto no existe")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Algún producto no existe")
 
     # Validar stock y disponibilidad
     for item in payload.items:
         prod = products_map[item.product_id]
         if not prod.active:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, f"Producto '{prod.name}' no esta activo"
+                status.HTTP_400_BAD_REQUEST, f"Producto '{prod.name}' no está activo"
             )
         if prod.stock < item.quantity:
             raise HTTPException(

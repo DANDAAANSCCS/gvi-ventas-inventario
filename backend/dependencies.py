@@ -26,9 +26,9 @@ async def get_current_user(
         payload = decode_token(token)
         user_id = payload.get("sub")
         if not user_id:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token invalido")
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido")
     except JWTError:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token invalido o expirado")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token inválido o expirado")
 
     result = await db.execute(
         select(User).where(User.id == UUID(user_id)).options(selectinload(User.client))

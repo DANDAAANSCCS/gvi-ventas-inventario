@@ -87,7 +87,7 @@ async def create_client(
     """Admin crea cliente + usuario asociado."""
     existing = await db.execute(select(User).where(User.email == payload.email.lower()))
     if existing.scalar_one_or_none():
-        raise HTTPException(status.HTTP_409_CONFLICT, "El correo ya esta registrado")
+        raise HTTPException(status.HTTP_409_CONFLICT, "El correo ya está registrado")
 
     user = User(
         email=payload.email.lower(),

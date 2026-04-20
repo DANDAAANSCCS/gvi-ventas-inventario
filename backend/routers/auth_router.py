@@ -37,7 +37,7 @@ async def register(payload: RegisterRequest, db: AsyncSession = Depends(get_db))
     """Crea un usuario cliente nuevo y su perfil. Devuelve JWT."""
     existing = await db.execute(select(User).where(User.email == payload.email.lower()))
     if existing.scalar_one_or_none():
-        raise HTTPException(status.HTTP_409_CONFLICT, "El correo ya esta registrado")
+        raise HTTPException(status.HTTP_409_CONFLICT, "El correo ya está registrado")
 
     user = User(
         email=payload.email.lower(),
@@ -67,7 +67,7 @@ async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.email == payload.email.lower()))
     user = result.scalar_one_or_none()
     if not user or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Credenciales invalidas")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Credenciales inválidas")
     if not user.is_active:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Usuario desactivado")
 
@@ -121,7 +121,7 @@ async def forgot_password(
         background_tasks.add_task(send_password_reset_email, email, reset_url)
 
     return SimpleMessage(
-        message="Si el correo esta registrado, te enviaremos un enlace para restablecer tu contrasena."
+        message="Si el correo está registrado, te enviaremos un enlace para restablecer tu contraseña."
     )
 
 
@@ -139,7 +139,7 @@ async def reset_password(payload: ResetPasswordRequest, db: AsyncSession = Depen
     if not token_row or token_row.used_at is not None or token_row.expires_at < now:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "El enlace es invalido o ya expiro. Solicita uno nuevo.",
+            "El enlace es inválido o ya expiró. Solicita uno nuevo.",
         )
 
     result = await db.execute(select(User).where(User.id == token_row.user_id))
@@ -152,4 +152,4 @@ async def reset_password(payload: ResetPasswordRequest, db: AsyncSession = Depen
     await db.commit()
 
     logger.info("[auth] Password actualizada para user %s", user.email)
-    return SimpleMessage(message="Contrasena actualizada correctamente.")
+    return SimpleMessage(message="Contraseña actualizada correctamente.")
