@@ -25,3 +25,8 @@ supabase_client.py
 # Scripts de desarrollo local
 test_e2e.sh
 /tmp/
+
+# Desktop app (PyInstaller artifacts)
+desktop/build/
+desktop/dist/
+desktop/*.spec
