@@ -141,7 +141,7 @@ async def get_columns(
         SELECT a.attname
         FROM pg_index i
         JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-        WHERE i.indrelid = :t::regclass AND i.indisprimary
+        WHERE i.indrelid = CAST(:t AS regclass) AND i.indisprimary
         """
     )
     fk_stmt = text(
