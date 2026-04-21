@@ -6,7 +6,7 @@ Portal web del proyecto **Nubia** (Ventas e Inventario) con API REST propia.
 
 - **Backend**: FastAPI + SQLAlchemy async + asyncpg + JWT + bcrypt
 - **Base de datos**: PostgreSQL 16
-- **Frontend**: HTML/CSS/JS vanilla servido por nginx
+- **Frontend**: HTML/CSS/JS vanilla servido por nginx (3 webs en el mismo contenedor)
 - **Deploy**: Docker / docker-compose / Coolify
 
 ## Estructura
@@ -21,22 +21,23 @@ Gestion_ventas_inventario/
 │   ├── schemas.py        # Pydantic
 │   ├── auth.py           # JWT + bcrypt
 │   ├── dependencies.py   # get_current_user, require_role
-│   ├── routers/          # auth, products, clients, orders, inventory, reports
+│   ├── routers/          # auth, products, clients, orders, inventory, reports, users, daily_ops, admin_db
 │   ├── seed.py           # admin + 15 productos demo
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── client/               # SPA publica (catálogo y compra cliente final)
 │   ├── index.html  login.html  register.html  orders.html  history.html  terms.html
-│   ├── css/  js/  nginx.conf  nginx-entrypoint.sh  Dockerfile
-├── admin-web/            # Panel admin web (staff/admin) — reemplaza al tkinter
+│   ├── css/  js/
+│   ├── nginx.conf        # sirve client + admin-web + db-web en el mismo dominio
+│   ├── nginx-entrypoint.sh
+│   └── Dockerfile        # build context = raiz del repo (copia las 3 webs)
+├── admin-web/            # Panel admin web (staff/admin)
 │   ├── login.html  dashboard.html  products.html  clients.html  orders.html
 │   ├── inventory.html  daily-ops.html  reports.html  users.html
-│   ├── css/admin.css  js/(api-client, auth-admin, utils, layout, charts, config).js
-│   ├── nginx.conf  nginx-entrypoint.sh  Dockerfile
+│   └── css/admin.css  js/(api-client, auth-admin, utils, layout, charts, config).js
 ├── db-web/               # DB manager estilo Railway (solo admin)
 │   ├── login.html  index.html
-│   ├── css/db.css  js/(api-client, auth-admin, utils, schema-viewer, table-grid, sql-editor, config).js
-│   ├── nginx.conf  nginx-entrypoint.sh  Dockerfile
+│   └── css/db.css  js/(api-client, auth-admin, utils, schema-viewer, table-grid, sql-editor, config).js
 ├── db/schema.sql         # DDL PostgreSQL (3FN, FKs, CHECK, índices)
 ├── docker-compose.yml    # dev local
 └── admin/                # app Tkinter original (legacy, se puede retirar)
@@ -49,9 +50,11 @@ docker compose up -d --build
 docker compose exec backend python seed.py
 ```
 
+Rutas (todas bajo el mismo puerto 8180):
+
 - Cliente publico: http://localhost:8180
-- Panel admin web: http://localhost:8181 (login con admin/staff)
-- DB manager: http://localhost:8182 (login solo con admin)
+- Panel admin web: http://localhost:8180/admin/ (login con admin/staff)
+- DB manager: http://localhost:8180/db/ (login solo con admin)
 - API: http://localhost:8100/docs
 - Admin por defecto: `admin@gvi.com` / `Admin123!`
 
@@ -66,36 +69,38 @@ Ver `backend/.env.example`. Claves:
 
 ## Deploy en Coolify
 
-Un solo backend alimenta 3 frontends desplegados en subdominios distintos.
+Un solo backend alimenta **un único frontend** que sirve las 3 webs bajo el mismo dominio usando subrutas.
 
-| Servicio | Subdominio | Build context | Env vars |
-|----------|-----------|---------------|----------|
-| Backend API | `api-gvi.namu-li.com` | `backend/` | `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
-| Cliente publico | `gvi.namu-li.com` | `client/` | `API_URL=https://api-gvi.namu-li.com` |
-| Panel admin | `admin.gvi.namu-li.com` | `admin-web/` | `API_URL=https://api-gvi.namu-li.com` |
-| DB manager | `db.gvi.namu-li.com` | `db-web/` | `API_URL=https://api-gvi.namu-li.com` |
+| Servicio | Subdominio | Build context | Dockerfile | Env vars |
+|----------|-----------|---------------|------------|----------|
+| Backend API | `api-gvi.namu-li.com` | `backend/` | `backend/Dockerfile` | `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
+| Frontend (3 webs) | `gvi.namu-li.com` | **raíz del repo** | `client/Dockerfile` | `API_URL=https://api-gvi.namu-li.com` |
+
+Rutas resultantes:
+
+- `https://gvi.namu-li.com/` → cliente publico
+- `https://gvi.namu-li.com/admin/` → panel admin (login rechaza a `client`)
+- `https://gvi.namu-li.com/db/` → DB manager (login solo permite `admin`)
 
 ### Pasos
 
 1. Crear recurso **PostgreSQL 16**.
-2. Crear servicio backend apuntando a `api-gvi.namu-li.com`. En `CORS_ORIGINS` incluir los 3 origenes separados por coma:
+2. Crear/editar servicio **backend** apuntando a `api-gvi.namu-li.com`. En `CORS_ORIGINS` basta un único origen:
    ```
-   CORS_ORIGINS=https://gvi.namu-li.com,https://admin.gvi.namu-li.com,https://db.gvi.namu-li.com
+   CORS_ORIGINS=https://gvi.namu-li.com
    ```
-3. Crear servicio **cliente publico** (build `client/Dockerfile`) con `API_URL=https://api-gvi.namu-li.com`.
-4. Crear servicio **admin-web** (build `admin-web/Dockerfile`) con `API_URL=https://api-gvi.namu-li.com`. Apuntar DNS de `admin.gvi.namu-li.com` al servidor.
-5. Crear servicio **db-web** (build `db-web/Dockerfile`) con `API_URL=https://api-gvi.namu-li.com`. Apuntar DNS de `db.gvi.namu-li.com` al servidor.
-6. Ejecutar schema en la BD:
+3. Crear/editar servicio **frontend** apuntando a `gvi.namu-li.com`. **Importante**: build context = raíz del repo y dockerfile = `client/Dockerfile`. Env: `API_URL=https://api-gvi.namu-li.com`.
+4. Ejecutar schema en la BD:
    ```bash
    psql $DATABASE_URL < db/schema.sql
    ```
-7. Ejecutar seed desde la terminal del backend:
+5. Ejecutar seed desde la terminal del backend:
    ```bash
    python seed.py
    ```
 
 ### Autobuild en git push
-Coolify detecta pushes a la rama configurada y rebuilda solo los servicios cuyo `build context` contenga cambios. Mantener las 3 webs como servicios separados evita rebuilds innecesarios.
+Coolify detecta pushes a la rama configurada y rebuilda el frontend cuando cambia cualquiera de las 3 carpetas (`client/`, `admin-web/`, `db-web/`) porque todas entran al mismo build context.
 
 ## Seguridad (checklist requisitos del examen)
 
