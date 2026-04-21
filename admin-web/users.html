@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GVI Admin — Usuarios</title>
+  <link rel="stylesheet" href="css/admin.css?v=1">
+</head>
+<body>
+  <div class="app">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <div class="page-header">
+        <h1>Usuarios</h1>
+        <div>
+          <button class="btn btn-primary" onclick="openCreateModal()">➕ Nuevo usuario</button>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <input id="q" class="form-control" placeholder="Buscar por email o nombre...">
+        <select id="role-filter" class="form-control">
+          <option value="">Todos los roles</option>
+          <option value="admin">Admin</option>
+          <option value="staff">Staff</option>
+          <option value="client">Client</option>
+        </select>
+        <label style="display:flex; align-items:center; gap:.4rem; font-size:.9rem;">
+          <input type="checkbox" id="only-active"> Solo activos
+        </label>
+      </div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Nombre</th>
+              <th>Rol</th>
+              <th>Activo</th>
+              <th>Creado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="users-body">
+            <tr><td colspan="6" style="text-align:center; color:var(--text-light);">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api-client.js?v=1"></script>
+  <script src="js/utils.js?v=1"></script>
+  <script src="js/auth-admin.js?v=1"></script>
+  <script src="js/layout.js?v=1"></script>
+  <script>
+    let currentUser = null;
+
+    async function loadUsers() {
+      const body = document.getElementById("users-body");
+      const params = {
+        q: document.getElementById("q").value.trim() || undefined,
+        role: document.getElementById("role-filter").value || undefined,
+        only_active: document.getElementById("only-active").checked || undefined,
+      };
+      try {
+        const users = await window.api.listUsers(params);
+        if (!users.length) {
+          body.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-light);">Sin resultados.</td></tr>`;
+          return;
+        }
+        body.innerHTML = users.map(u => {
+          const isSelf = u.id === currentUser.id;
+          return `
+            <tr ${isSelf ? 'style="background:rgba(79,70,229,.04);"' : ""}>
+              <td>${escapeHtml(u.email)} ${isSelf ? '<span class="badge badge-info">TÚ</span>' : ""}</td>
+              <td>${escapeHtml(u.name || "—")}</td>
+              <td>${roleBadge(u.role)}</td>
+              <td>${u.is_active ? '<span class="badge badge-success">Si</span>' : '<span class="badge badge-secondary">No</span>'}</td>
+              <td>${formatDate(u.created_at)}</td>
+              <td class="actions">
+                <button class="btn btn-sm" onclick="openEditModal('${u.id}', '${escapeHtml(u.email)}', '${u.role}', ${u.is_active}, ${isSelf})">Editar</button>
+                <button class="btn btn-sm" onclick="resetPassword('${u.id}', '${escapeHtml(u.email)}')">Password</button>
+                ${!isSelf && u.is_active ? `<button class="btn btn-sm btn-danger" onclick="deleteUser('${u.id}', '${escapeHtml(u.email)}')">Eliminar</button>` : ""}
+              </td>
+            </tr>`;
+        }).join("");
+      } catch (err) {
+        console.error("[users]", err);
+        body.innerHTML = `<tr><td colspan="6" style="color:var(--danger);">Error: ${escapeHtml(err.message || "")}</td></tr>`;
+      }
+    }
+
+    async function openCreateModal() {
+      const res = await openModal({
+        title: "Nuevo usuario",
+        bodyHtml: `
+          <div class="form-group">
+            <label class="form-label">Email *</label>
+            <input class="form-control" name="email" type="email" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Contraseña inicial *</label>
+            <input class="form-control" name="password" type="password" required minlength="6">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Rol *</label>
+            <select class="form-control" name="role" required>
+              <option value="staff">Staff</option>
+              <option value="admin">Admin</option>
+              <option value="client">Cliente</option>
+            </select>
+          </div>
+          <div class="form-group" id="client-fields" style="display:none;">
+            <div class="form-group">
+              <label class="form-label">Nombre (solo para clientes) *</label>
+              <input class="form-control" name="name">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Telefono</label>
+              <input class="form-control" name="phone">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Direccion</label>
+              <input class="form-control" name="address">
+            </div>
+          </div>
+          <script>
+            document.querySelector('#modal-backdrop select[name="role"]').addEventListener("change", function() {
+              document.getElementById("client-fields").style.display = this.value === "client" ? "block" : "none";
+            });
+          <\/script>
+        `,
+        confirmText: "Crear",
+        onConfirm: async (body) => {
+          const v = getFormValues(body);
+          if (!v.email || !v.password || !v.role) throw new Error("Email, contraseña y rol son obligatorios.");
+          if (!isValidEmail(v.email)) throw new Error("Email invalido.");
+          if (v.role === "client" && !v.name) throw new Error("Para rol cliente se requiere nombre.");
+          return await window.api.createUser({
+            email: v.email, password: v.password, role: v.role,
+            name: v.name || null, phone: v.phone || null, address: v.address || null,
+          });
+        },
+      });
+      if (res) { showToast("Usuario creado", "success"); loadUsers(); }
+    }
+
+    async function openEditModal(id, email, role, isActive, isSelf) {
+      const res = await openModal({
+        title: `Editar: ${email}`,
+        bodyHtml: `
+          <div class="form-group">
+            <label class="form-label">Rol</label>
+            <select class="form-control" name="role" ${isSelf ? "disabled" : ""}>
+              <option value="admin" ${role === "admin" ? "selected" : ""}>Admin</option>
+              <option value="staff" ${role === "staff" ? "selected" : ""}>Staff</option>
+              <option value="client" ${role === "client" ? "selected" : ""}>Cliente</option>
+            </select>
+            ${isSelf ? '<small style="color:var(--text-light);">No puedes cambiar tu propio rol.</small>' : ""}
+          </div>
+          <div class="form-group">
+            <label style="display:flex; align-items:center; gap:.4rem;">
+              <input type="checkbox" name="is_active" ${isActive ? "checked" : ""} ${isSelf ? "disabled" : ""}> Activo
+            </label>
+            ${isSelf ? '<small style="color:var(--text-light);">No puedes desactivarte.</small>' : ""}
+          </div>
+        `,
+        confirmText: "Guardar",
+        onConfirm: async (body) => {
+          const v = getFormValues(body);
+          const payload = {};
+          if (!isSelf) {
+            payload.role = v.role;
+            payload.is_active = !!v.is_active;
+          }
+          if (!Object.keys(payload).length) throw new Error("Sin cambios que aplicar.");
+          return await window.api.patchUser(id, payload);
+        },
+      });
+      if (res) { showToast("Usuario actualizado", "success"); loadUsers(); }
+    }
+
+    async function resetPassword(id, email) {
+      const res = await openModal({
+        title: `Resetear contraseña: ${email}`,
+        bodyHtml: `
+          <div class="form-group">
+            <label class="form-label">Nueva contraseña *</label>
+            <input class="form-control" name="new_password" type="password" required minlength="6">
+            <small style="color:var(--text-light);">Minimo 6 caracteres.</small>
+          </div>
+        `,
+        confirmText: "Resetear",
+        onConfirm: async (body) => {
+          const v = getFormValues(body);
+          if (!v.new_password || v.new_password.length < 6) throw new Error("La contraseña debe tener al menos 6 caracteres.");
+          await window.api.resetUserPassword(id, v.new_password);
+          return true;
+        },
+      });
+      if (res) showToast("Contraseña actualizada", "success");
+    }
+
+    async function deleteUser(id, email) {
+      const ok = await confirmDialog(`¿Desactivar a "${email}"?`);
+      if (!ok) return;
+      try {
+        await window.api.deleteUser(id);
+        showToast("Usuario desactivado", "success");
+        loadUsers();
+      } catch (err) { showToast(err.message || "Error", "danger"); }
+    }
+
+    (async () => {
+      currentUser = await requireAdmin(true); // solo admin
+      if (!currentUser) return;
+      renderSidebar(currentUser);
+      await loadUsers();
+      document.getElementById("q").addEventListener("input", debounce(loadUsers, 300));
+      document.getElementById("role-filter").addEventListener("change", loadUsers);
+      document.getElementById("only-active").addEventListener("change", loadUsers);
+    })();
+  </script>
+</body>
+</html>

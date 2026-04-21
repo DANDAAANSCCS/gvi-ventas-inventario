@@ -8,7 +8,15 @@ class Settings(BaseSettings):
     jwt_secret: str = "cambia-esto"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 1440
-    cors_origins: str = "http://localhost:8080"
+    cors_origins: str = (
+        "http://localhost:8080,"
+        "http://localhost:8180,"
+        "http://localhost:8181,"
+        "http://localhost:8182,"
+        "https://gvi.namu-li.com,"
+        "https://admin.gvi.namu-li.com,"
+        "https://db.gvi.namu-li.com"
+    )
     admin_email: str = "admin@gvi.com"
     admin_password: str = "Admin123!"
 

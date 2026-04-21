@@ -4,7 +4,17 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
-from routers import auth_router, clients, inventory, orders, products, reports
+from routers import (
+    admin_db,
+    auth_router,
+    clients,
+    daily_ops,
+    inventory,
+    orders,
+    products,
+    reports,
+    users,
+)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,6 +38,9 @@ app.include_router(clients.router)
 app.include_router(orders.router)
 app.include_router(inventory.router)
 app.include_router(reports.router)
+app.include_router(users.router)
+app.include_router(daily_ops.router)
+app.include_router(admin_db.router)
 
 
 @app.get("/health", tags=["health"])

@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
@@ -176,6 +177,95 @@ class TopProductItem(BaseModel):
     name: str
     quantity: int
     revenue: Decimal
+
+
+# ========= Users (admin CRUD) =========
+class UserAdminCreate(BaseModel):
+    email: EmailStr
+    password: str = Field(min_length=6, max_length=128)
+    role: UserRole
+    # Solo aplica cuando role=client; se ignora para staff/admin
+    name: str | None = None
+    phone: str | None = None
+    address: str | None = None
+
+
+class UserAdminPatch(BaseModel):
+    role: UserRole | None = None
+    is_active: bool | None = None
+
+
+class UserResetPassword(BaseModel):
+    new_password: str = Field(min_length=6, max_length=128)
+
+
+class UserAdminOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    email: EmailStr
+    role: UserRole
+    is_active: bool
+    created_at: datetime
+    name: str | None = None  # desde Client.name si existe
+
+
+# ========= Daily Operations (caja diaria) =========
+class DailyOpCreate(BaseModel):
+    opening_cash: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    notes: str | None = None
+
+
+class DailyOpClose(BaseModel):
+    closing_cash: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
+    notes: str | None = None
+
+
+class DailyOpOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: UUID
+    date: date
+    opening_cash: Decimal
+    closing_cash: Decimal | None
+    total_sales: Decimal
+    notes: str | None
+    created_by: UUID | None
+    created_at: datetime
+    is_closed: bool
+
+
+# ========= Admin DB Manager =========
+class TableInfo(BaseModel):
+    name: str
+    row_count: int
+    column_count: int
+
+
+class ColumnInfo(BaseModel):
+    name: str
+    type: str
+    nullable: bool
+    default: str | None = None
+    is_pk: bool = False
+    fk_ref: str | None = None
+
+
+class RowsPage(BaseModel):
+    columns: list[str]
+    rows: list[dict[str, Any]]
+    total: int
+
+
+class SqlQueryRequest(BaseModel):
+    sql: str = Field(min_length=1)
+    params: dict[str, Any] | None = None
+    allow_destructive: bool = False
+
+
+class SqlQueryResult(BaseModel):
+    columns: list[str]
+    rows: list[dict[str, Any]]
+    rowcount: int
+    duration_ms: float
 
 
 TokenResponse.model_rebuild()

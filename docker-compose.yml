@@ -1,7 +1,9 @@
 # Docker compose para desarrollo local.
-# - db:       PostgreSQL 16 con schema.sql montado como init (se ejecuta solo 1a vez)
-# - backend:  FastAPI en :8000
-# - frontend: nginx en :8080 que inyecta API_URL=http://localhost:8000
+# - db:         PostgreSQL 16 con schema.sql montado como init (se ejecuta solo 1a vez)
+# - backend:    FastAPI en :8100
+# - frontend:   nginx en :8180 — cliente publico
+# - admin-web:  nginx en :8181 — panel admin
+# - db-web:     nginx en :8182 — DB manager tipo Railway
 
 services:
   db:
@@ -34,7 +36,7 @@ services:
       JWT_SECRET: "dev-secret-cambia-en-prod"
       JWT_ALGORITHM: "HS256"
       JWT_EXPIRE_MINUTES: "1440"
-      CORS_ORIGINS: "http://localhost:8180"
+      CORS_ORIGINS: "http://localhost:8180,http://localhost:8181,http://localhost:8182"
       ADMIN_EMAIL: "admin@gvi.com"
       ADMIN_PASSWORD: "Admin123!"
     ports:
@@ -50,6 +52,28 @@ services:
       API_URL: "http://localhost:8100"
     ports:
       - "8180:80"
+
+  admin-web:
+    build:
+      context: ./admin-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      API_URL: "http://localhost:8100"
+    ports:
+      - "8181:80"
+
+  db-web:
+    build:
+      context: ./db-web
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      API_URL: "http://localhost:8100"
+    ports:
+      - "8182:80"
 
 volumes:
   gvi_pgdata:

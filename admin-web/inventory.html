@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GVI Admin — Inventario</title>
+  <link rel="stylesheet" href="css/admin.css?v=1">
+</head>
+<body>
+  <div class="app">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <div class="page-header">
+        <h1>Inventario</h1>
+        <div>
+          <button class="btn btn-primary" onclick="openMovementModal()">➕ Registrar movimiento</button>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button class="active" data-tab="stock">Stock actual</button>
+        <button data-tab="movements">Movimientos</button>
+      </div>
+
+      <div id="tab-stock" class="tab-pane active">
+        <div class="toolbar">
+          <input id="q-stock" class="form-control" placeholder="Buscar producto...">
+          <label style="display:flex; align-items:center; gap:.4rem; font-size:.9rem;">
+            <input type="checkbox" id="only-low"> Solo stock bajo (&lt;5)
+          </label>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>Producto</th><th>Categoria</th><th class="num">Stock</th><th class="num">Precio</th><th>Acciones</th></tr>
+            </thead>
+            <tbody id="stock-body"><tr><td colspan="5" style="text-align:center; color:var(--text-light);">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div id="tab-movements" class="tab-pane">
+        <div class="toolbar">
+          <select id="filter-product" class="form-control">
+            <option value="">Todos los productos</option>
+          </select>
+          <select id="filter-type" class="form-control">
+            <option value="">Todos los tipos</option>
+            <option value="in">Entrada</option>
+            <option value="out">Salida</option>
+            <option value="adjustment">Ajuste</option>
+          </select>
+        </div>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>Fecha</th><th>Producto</th><th>Tipo</th><th class="num">Cantidad</th><th>Motivo</th></tr>
+            </thead>
+            <tbody id="movements-body"><tr><td colspan="5" style="text-align:center; color:var(--text-light);">Cargando...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api-client.js?v=1"></script>
+  <script src="js/utils.js?v=1"></script>
+  <script src="js/auth-admin.js?v=1"></script>
+  <script src="js/layout.js?v=1"></script>
+  <script>
+    let currentUser = null;
+    let allProducts = [];
+    let allMovements = [];
+
+    function switchTab(tab) {
+      document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+      document.querySelectorAll(".tab-pane").forEach(p => p.classList.toggle("active", p.id === `tab-${tab}`));
+    }
+
+    function renderStock() {
+      const q = document.getElementById("q-stock").value.trim().toLowerCase();
+      const onlyLow = document.getElementById("only-low").checked;
+      let list = allProducts.filter(p => p.active !== false);
+      if (q) list = list.filter(p => p.name.toLowerCase().includes(q) || (p.category || "").toLowerCase().includes(q));
+      if (onlyLow) list = list.filter(p => (p.stock ?? 0) < 5);
+      const body = document.getElementById("stock-body");
+      if (!list.length) {
+        body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-light);">Sin resultados.</td></tr>`;
+        return;
+      }
+      body.innerHTML = list.map(p => `
+        <tr>
+          <td><strong>${escapeHtml(p.name)}</strong></td>
+          <td>${escapeHtml(p.category || "—")}</td>
+          <td class="num" style="${p.stock < 5 ? 'color:var(--danger); font-weight:600;' : ''}">${p.stock}</td>
+          <td class="num">${formatCurrency(p.price)}</td>
+          <td class="actions">
+            <button class="btn btn-sm" onclick="openMovementModal('${p.id}')">Ajustar</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    function renderMovements() {
+      const pid = document.getElementById("filter-product").value;
+      const type = document.getElementById("filter-type").value;
+      let list = allMovements;
+      if (pid)  list = list.filter(m => m.product_id === pid);
+      if (type) list = list.filter(m => m.type === type);
+      const body = document.getElementById("movements-body");
+      if (!list.length) {
+        body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-light);">Sin movimientos.</td></tr>`;
+        return;
+      }
+      body.innerHTML = list.map(m => `
+        <tr>
+          <td>${formatDate(m.created_at, true)}</td>
+          <td>${escapeHtml(m.product_name || shortId(m.product_id))}</td>
+          <td>${movementBadge(m.type)}</td>
+          <td class="num">${m.quantity}</td>
+          <td>${escapeHtml(m.reason || "—")}</td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadProducts() {
+      try {
+        allProducts = await window.api.listProducts({ only_active: true, limit: 500 });
+        const sel = document.getElementById("filter-product");
+        allProducts.forEach(p => {
+          const o = document.createElement("option");
+          o.value = p.id; o.textContent = p.name;
+          sel.appendChild(o);
+        });
+        renderStock();
+      } catch (err) { console.error("[products]", err); }
+    }
+
+    async function loadMovements() {
+      try {
+        allMovements = await window.api.listMovements({ limit: 200 });
+        renderMovements();
+      } catch (err) {
+        console.error("[movements]", err);
+        document.getElementById("movements-body").innerHTML = `<tr><td colspan="5" style="color:var(--danger);">Error: ${escapeHtml(err.message || "")}</td></tr>`;
+      }
+    }
+
+    async function openMovementModal(presetProductId = "") {
+      const prodOptions = allProducts.map(p =>
+        `<option value="${p.id}" ${p.id === presetProductId ? "selected" : ""}>${escapeHtml(p.name)} (stock: ${p.stock})</option>`
+      ).join("");
+      const res = await openModal({
+        title: "Registrar movimiento",
+        bodyHtml: `
+          <div class="form-group">
+            <label class="form-label">Producto *</label>
+            <select class="form-control" name="product_id" required>
+              <option value="">-- seleccionar --</option>
+              ${prodOptions}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tipo *</label>
+            <select class="form-control" name="type" required>
+              <option value="in">Entrada (+ stock)</option>
+              <option value="out">Salida (- stock)</option>
+              <option value="adjustment">Ajuste (fija stock absoluto)</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cantidad *</label>
+            <input class="form-control" name="quantity" type="number" min="1" required>
+            <small style="color:var(--text-light);">En "ajuste", es el nuevo stock absoluto.</small>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Motivo</label>
+            <input class="form-control" name="reason">
+          </div>
+        `,
+        confirmText: "Registrar",
+        onConfirm: async (body) => {
+          const v = getFormValues(body);
+          if (!v.product_id || !v.type || !v.quantity) throw new Error("Producto, tipo y cantidad son obligatorios.");
+          return await window.api.createMovement({
+            product_id: v.product_id,
+            type: v.type,
+            quantity: v.quantity,
+            reason: v.reason || null,
+          });
+        },
+      });
+      if (res) { showToast("Movimiento registrado", "success"); await loadProducts(); await loadMovements(); }
+    }
+
+    (async () => {
+      currentUser = await requireAdmin(false);
+      if (!currentUser) return;
+      renderSidebar(currentUser);
+      await loadProducts();
+      await loadMovements();
+
+      document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => switchTab(b.dataset.tab)));
+      document.getElementById("q-stock").addEventListener("input", debounce(renderStock, 300));
+      document.getElementById("only-low").addEventListener("change", renderStock);
+      document.getElementById("filter-product").addEventListener("change", renderMovements);
+      document.getElementById("filter-type").addEventListener("change", renderMovements);
+    })();
+  </script>
+</body>
+</html>

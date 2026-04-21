@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GVI Admin — Pedidos</title>
+  <link rel="stylesheet" href="css/admin.css?v=1">
+</head>
+<body>
+  <div class="app">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <div class="page-header">
+        <h1>Pedidos</h1>
+        <div>
+          <button class="btn" onclick="loadOrders()">🔄 Refrescar</button>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <select id="status-filter" class="form-control">
+          <option value="">Todos los estados</option>
+          <option value="pending">Pendientes</option>
+          <option value="completed">Completados</option>
+          <option value="cancelled">Cancelados</option>
+        </select>
+        <input id="from-date" type="date" class="form-control">
+        <input id="to-date" type="date" class="form-control">
+        <input id="q" class="form-control" placeholder="Filtrar por cliente o id...">
+      </div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Cliente</th>
+              <th class="num">Total</th>
+              <th>Estado</th>
+              <th>Metodo pago</th>
+              <th>Fecha</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="orders-body">
+            <tr><td colspan="7" style="text-align:center; color:var(--text-light);">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api-client.js?v=1"></script>
+  <script src="js/utils.js?v=1"></script>
+  <script src="js/auth-admin.js?v=1"></script>
+  <script src="js/layout.js?v=1"></script>
+  <script>
+    let currentUser = null;
+    let allOrders = [];
+
+    function applyFilters() {
+      const q = document.getElementById("q").value.trim().toLowerCase();
+      const from = document.getElementById("from-date").value;
+      const to = document.getElementById("to-date").value;
+      const body = document.getElementById("orders-body");
+      let list = allOrders;
+      if (q) {
+        list = list.filter(o =>
+          (o.client_name || "").toLowerCase().includes(q) ||
+          String(o.id).toLowerCase().includes(q)
+        );
+      }
+      if (from) list = list.filter(o => o.created_at >= from);
+      if (to)   list = list.filter(o => o.created_at <= to + "T23:59:59");
+      if (!list.length) {
+        body.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-light);">Sin resultados.</td></tr>`;
+        return;
+      }
+      body.innerHTML = list.map(o => `
+        <tr style="cursor:pointer;" onclick="openDetail('${o.id}')">
+          <td><code>${escapeHtml(shortId(o.id))}</code></td>
+          <td>${escapeHtml(o.client_name || "—")}</td>
+          <td class="num">${formatCurrency(o.total)}</td>
+          <td>${statusBadge(o.status)}</td>
+          <td>${escapeHtml(o.payment_method || "—")}</td>
+          <td>${formatDate(o.created_at, true)}</td>
+          <td class="actions" onclick="event.stopPropagation()">
+            <button class="btn btn-sm" onclick="openDetail('${o.id}')">Ver</button>
+          </td>
+        </tr>
+      `).join("");
+    }
+
+    async function loadOrders() {
+      const body = document.getElementById("orders-body");
+      const status = document.getElementById("status-filter").value;
+      try {
+        const params = status ? { status_filter: status } : {};
+        allOrders = await window.api.listOrders(params);
+        applyFilters();
+      } catch (err) {
+        console.error("[orders]", err);
+        body.innerHTML = `<tr><td colspan="7" style="color:var(--danger);">Error: ${escapeHtml(err.message || "")}</td></tr>`;
+      }
+    }
+
+    async function openDetail(id) {
+      try {
+        const o = await window.api.getOrder(id);
+        const itemsHtml = o.items.map(it => `
+          <tr>
+            <td>${escapeHtml(it.product_name || shortId(it.product_id))}</td>
+            <td class="num">${it.quantity}</td>
+            <td class="num">${formatCurrency(it.unit_price)}</td>
+            <td class="num">${formatCurrency(Number(it.unit_price) * it.quantity)}</td>
+          </tr>
+        `).join("");
+        const actions = `
+          <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:1rem;">
+            ${o.status === "pending" ? `
+              <button class="btn btn-success btn-sm" onclick="changeStatus('${o.id}', 'completed')">✓ Marcar completado</button>
+              <button class="btn btn-danger btn-sm" onclick="cancelOrder('${o.id}')">✕ Cancelar pedido</button>
+            ` : ""}
+            ${o.status === "completed" ? `<button class="btn btn-warning btn-sm" onclick="changeStatus('${o.id}', 'pending')">Volver a pendiente</button>` : ""}
+          </div>`;
+        await openModal({
+          title: `Pedido ${shortId(o.id)}`,
+          bodyHtml: `
+            <p><strong>Cliente:</strong> ${escapeHtml(o.client_name || "—")}</p>
+            <p><strong>Estado:</strong> ${statusBadge(o.status)}</p>
+            <p><strong>Metodo pago:</strong> ${escapeHtml(o.payment_method || "—")}</p>
+            <p><strong>Fecha:</strong> ${formatDate(o.created_at, true)}</p>
+            ${o.notes ? `<p><strong>Notas:</strong> ${escapeHtml(o.notes)}</p>` : ""}
+            <hr>
+            <h3 style="font-size:1rem; margin: .5rem 0;">Items</h3>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>Producto</th><th class="num">Cant.</th><th class="num">Precio</th><th class="num">Subtotal</th></tr></thead>
+                <tbody>${itemsHtml}</tbody>
+                <tfoot><tr><td colspan="3" class="num"><strong>TOTAL</strong></td><td class="num"><strong>${formatCurrency(o.total)}</strong></td></tr></tfoot>
+              </table>
+            </div>
+            ${actions}
+          `,
+          confirmText: "Cerrar",
+          cancelText: "",
+          onConfirm: () => true,
+        });
+      } catch (err) { showToast(err.message || "Error", "danger"); }
+    }
+
+    async function changeStatus(id, status) {
+      try {
+        await window.api.updateOrderStatus(id, status);
+        showToast("Estado actualizado", "success");
+        document.getElementById("modal-backdrop")?.remove();
+        loadOrders();
+      } catch (err) { showToast(err.message || "Error", "danger"); }
+    }
+
+    async function cancelOrder(id) {
+      const ok = await confirmDialog("¿Cancelar este pedido? Se repondra el stock.", { confirmText: "Cancelar pedido" });
+      if (!ok) return;
+      try {
+        await window.api.cancelOrder(id);
+        showToast("Pedido cancelado", "success");
+        document.getElementById("modal-backdrop")?.remove();
+        loadOrders();
+      } catch (err) { showToast(err.message || "Error", "danger"); }
+    }
+
+    (async () => {
+      currentUser = await requireAdmin(false);
+      if (!currentUser) return;
+      renderSidebar(currentUser);
+      await loadOrders();
+
+      document.getElementById("status-filter").addEventListener("change", loadOrders);
+      document.getElementById("q").addEventListener("input", debounce(applyFilters, 300));
+      document.getElementById("from-date").addEventListener("change", applyFilters);
+      document.getElementById("to-date").addEventListener("change", applyFilters);
+    })();
+  </script>
+</body>
+</html>

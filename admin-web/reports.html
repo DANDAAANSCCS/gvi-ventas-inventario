@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GVI Admin — Reportes</title>
+  <link rel="stylesheet" href="css/admin.css?v=1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <div class="page-header">
+        <h1>Reportes</h1>
+      </div>
+
+      <div class="toolbar">
+        <label style="font-size:.9rem;">Periodo:</label>
+        <select id="days-filter" class="form-control">
+          <option value="7">Ultimos 7 dias</option>
+          <option value="30" selected>Ultimos 30 dias</option>
+          <option value="90">Ultimos 90 dias</option>
+          <option value="180">Ultimos 180 dias</option>
+          <option value="365">Ultimo año</option>
+        </select>
+        <label style="font-size:.9rem;">Top productos:</label>
+        <select id="top-limit" class="form-control">
+          <option value="5">Top 5</option>
+          <option value="10" selected>Top 10</option>
+          <option value="20">Top 20</option>
+        </select>
+        <button class="btn btn-primary" onclick="exportCsv()">📥 Exportar CSV</button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span id="sales-title">Ventas por dia</span>
+          <span id="sales-summary" style="font-weight:normal; color:var(--text-light); font-size:.85rem;"></span>
+        </div>
+        <div class="card-body">
+          <div style="position:relative; height:320px;">
+            <canvas id="chart-sales"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span>Top productos por unidades</span>
+        </div>
+        <div class="card-body">
+          <div style="position:relative; height:340px; margin-bottom:1rem;">
+            <canvas id="chart-top"></canvas>
+          </div>
+          <div class="table-wrapper" style="border:none;">
+            <table>
+              <thead>
+                <tr><th>Producto</th><th class="num">Unidades</th><th class="num">Ingresos</th></tr>
+              </thead>
+              <tbody id="top-body"><tr><td colspan="3" style="text-align:center; color:var(--text-light);">Cargando...</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api-client.js?v=1"></script>
+  <script src="js/utils.js?v=1"></script>
+  <script src="js/auth-admin.js?v=1"></script>
+  <script src="js/layout.js?v=1"></script>
+  <script src="js/charts.js?v=1"></script>
+  <script>
+    let currentUser = null;
+    let salesData = [];
+    let topData = [];
+
+    async function loadSales() {
+      const days = Number(document.getElementById("days-filter").value);
+      try {
+        salesData = await window.api.salesReport(days);
+        const labels = salesData.map(r => r.date);
+        const values = salesData.map(r => Number(r.total));
+        renderLineChart(document.getElementById("chart-sales"), { labels, values }, { label: "Ventas" });
+        const total = salesData.reduce((a, r) => a + Number(r.total), 0);
+        const orders = salesData.reduce((a, r) => a + r.count, 0);
+        document.getElementById("sales-summary").textContent =
+          `Total: ${formatCurrency(total)} en ${orders} pedidos (${days} dias)`;
+      } catch (err) { console.error("[sales]", err); }
+    }
+
+    async function loadTop() {
+      const days = Number(document.getElementById("days-filter").value);
+      const limit = Number(document.getElementById("top-limit").value);
+      const body = document.getElementById("top-body");
+      try {
+        topData = await window.api.topProducts(days, limit);
+        if (!topData.length) {
+          body.innerHTML = `<tr><td colspan="3" style="text-align:center; color:var(--text-light);">Sin datos.</td></tr>`;
+          renderHBarChart(document.getElementById("chart-top"), { labels: [], values: [] }, { label: "Unidades" });
+          return;
+        }
+        const labels = topData.map(r => r.name);
+        const values = topData.map(r => r.quantity);
+        renderHBarChart(document.getElementById("chart-top"), { labels, values }, { label: "Unidades" });
+        body.innerHTML = topData.map(r => `
+          <tr>
+            <td>${escapeHtml(r.name)}</td>
+            <td class="num">${r.quantity}</td>
+            <td class="num">${formatCurrency(r.revenue)}</td>
+          </tr>
+        `).join("");
+      } catch (err) {
+        console.error("[top]", err);
+        body.innerHTML = `<tr><td colspan="3" style="color:var(--danger);">Error: ${escapeHtml(err.message || "")}</td></tr>`;
+      }
+    }
+
+    function toCsv(rows, headers) {
+      const esc = v => {
+        if (v == null) return "";
+        const s = String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      };
+      const head = headers.map(h => esc(h.label)).join(",");
+      const body = rows.map(r => headers.map(h => esc(r[h.key])).join(",")).join("\n");
+      return head + "\n" + body;
+    }
+
+    function downloadCsv(content, filename) {
+      const blob = new Blob(["\ufeff" + content], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportCsv() {
+      const days = document.getElementById("days-filter").value;
+      const salesCsv = toCsv(salesData, [
+        { key: "date", label: "fecha" },
+        { key: "total", label: "total" },
+        { key: "count", label: "pedidos" },
+      ]);
+      const topCsv = toCsv(topData, [
+        { key: "name", label: "producto" },
+        { key: "quantity", label: "unidades" },
+        { key: "revenue", label: "ingresos" },
+      ]);
+      const combined = `# Ventas por dia (ultimos ${days} dias)\n${salesCsv}\n\n# Top productos\n${topCsv}`;
+      downloadCsv(combined, `reporte-gvi-${new Date().toISOString().slice(0,10)}.csv`);
+      showToast("CSV descargado", "success");
+    }
+
+    async function loadAll() { await Promise.all([loadSales(), loadTop()]); }
+
+    (async () => {
+      currentUser = await requireAdmin(false);
+      if (!currentUser) return;
+      renderSidebar(currentUser);
+      await loadAll();
+      document.getElementById("days-filter").addEventListener("change", loadAll);
+      document.getElementById("top-limit").addEventListener("change", loadTop);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GVI Admin — Login</title>
+  <link rel="stylesheet" href="css/admin.css?v=1">
+</head>
+<body>
+  <div class="login-wrapper">
+    <div class="login-card">
+      <div style="text-align:center; font-size:2.5rem; margin-bottom:.5rem;">🏪</div>
+      <h1>GVI Admin</h1>
+      <p class="subtitle">Panel de administracion</p>
+      <form id="login-form">
+        <div class="form-group">
+          <label class="form-label" for="email">Email</label>
+          <input class="form-control" type="email" name="email" id="email" required autocomplete="username" placeholder="admin@gvi.com">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="password">Contraseña</label>
+          <input class="form-control" type="password" name="password" id="password" required autocomplete="current-password">
+        </div>
+        <div id="login-alert" class="alert alert-danger" style="display:none;"></div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="login-btn">Ingresar</button>
+      </form>
+      <p class="subtitle" style="margin-top:1.5rem; margin-bottom:0; font-size:.75rem;">Solo personal autorizado (admin/staff).</p>
+    </div>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api-client.js?v=1"></script>
+  <script src="js/utils.js?v=1"></script>
+  <script>
+    (async () => {
+      if (window.apiAuth.getToken()) {
+        try {
+          const user = await window.api.me();
+          if (user.role === "admin" || user.role === "staff") {
+            window.location.href = "dashboard.html";
+            return;
+          }
+        } catch (_) {
+          window.apiAuth.clearSession();
+        }
+      }
+    })();
+
+    const form = document.getElementById("login-form");
+    const alertBox = document.getElementById("login-alert");
+    const btn = document.getElementById("login-btn");
+
+    function showError(msg) { alertBox.textContent = msg; alertBox.style.display = "block"; }
+    function hideError() { alertBox.style.display = "none"; }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideError();
+      const data = getFormValues(form);
+      if (!data.email || !data.password) { showError("Completa email y contraseña."); return; }
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Ingresando...";
+      try {
+        const res = await window.api.login(data.email, data.password);
+        if (!res || !res.user) throw new Error("Respuesta invalida del servidor.");
+        if (res.user.role === "client") {
+          window.apiAuth.clearSession();
+          throw new Error("Acceso no autorizado. Este panel es solo para staff/admin.");
+        }
+        window.location.href = "dashboard.html";
+      } catch (err) {
+        console.error("[login]", err);
+        showError(err.message || "Error al iniciar sesion.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+  </script>
+</body>
+</html>

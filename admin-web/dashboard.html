@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GVI Admin — Dashboard</title>
+  <link rel="stylesheet" href="css/admin.css?v=1">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside id="sidebar" class="sidebar"></aside>
+
+    <main class="main">
+      <div class="page-header">
+        <h1>Dashboard</h1>
+        <div>
+          <button class="btn" onclick="loadDashboard()">🔄 Refrescar</button>
+        </div>
+      </div>
+
+      <section class="metric-grid">
+        <div class="metric">
+          <p class="metric-label">Ventas de hoy</p>
+          <p class="metric-value" id="metric-sales-today">—</p>
+          <p class="metric-delta" id="metric-sales-today-hint">—</p>
+        </div>
+        <div class="metric">
+          <p class="metric-label">Productos activos</p>
+          <p class="metric-value" id="metric-products">—</p>
+          <p class="metric-delta">Catalogo vigente</p>
+        </div>
+        <div class="metric">
+          <p class="metric-label">Clientes activos</p>
+          <p class="metric-value" id="metric-clients">—</p>
+          <p class="metric-delta">Total registrados</p>
+        </div>
+        <div class="metric warning">
+          <p class="metric-label">Stock bajo (&lt;5)</p>
+          <p class="metric-value" id="metric-low-stock">—</p>
+          <p class="metric-delta" id="metric-low-stock-hint">Productos</p>
+        </div>
+      </section>
+
+      <div class="dashboard-grid">
+        <div class="card">
+          <div class="card-header"><span>Ventas — ultimos 7 dias</span></div>
+          <div class="card-body">
+            <div style="position:relative; height:280px;">
+              <canvas id="chart-sales-7d"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span>Ultimas 10 ordenes</span></div>
+          <div class="table-wrapper" style="border:none; border-radius:0;">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Cliente</th>
+                  <th class="num">Total</th>
+                  <th>Estado</th>
+                  <th>Fecha</th>
+                </tr>
+              </thead>
+              <tbody id="recent-orders-body">
+                <tr><td colspan="5" style="text-align:center; color:var(--text-light);">Cargando...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <style>
+    .dashboard-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    @media (max-width: 1024px) { .dashboard-grid { grid-template-columns: 1fr; } }
+  </style>
+
+  <script src="js/config.js"></script>
+  <script src="js/api-client.js?v=1"></script>
+  <script src="js/utils.js?v=1"></script>
+  <script src="js/auth-admin.js?v=1"></script>
+  <script src="js/layout.js?v=1"></script>
+  <script src="js/charts.js?v=1"></script>
+  <script>
+    let currentUser = null;
+
+    async function loadMetrics() {
+      try {
+        const products = await window.api.listProducts({ limit: 500 });
+        const list = Array.isArray(products) ? products : (products.items || []);
+        const active = list.filter(p => p.active !== false);
+        const low = active.filter(p => (p.stock ?? 0) < 5);
+        document.getElementById("metric-products").textContent = active.length;
+        document.getElementById("metric-low-stock").textContent = low.length;
+        document.getElementById("metric-low-stock-hint").textContent =
+          low.length ? low.slice(0, 3).map(p => p.name).join(", ") + (low.length > 3 ? "..." : "") : "Todo en orden";
+      } catch (err) { console.error("[metrics:products]", err); }
+
+      try {
+        const clients = await window.api.listClients({ limit: 500 });
+        const list = Array.isArray(clients) ? clients : (clients.items || []);
+        document.getElementById("metric-clients").textContent = list.length;
+      } catch (err) { console.error("[metrics:clients]", err); }
+
+      try {
+        const op = await window.api.getTodayOp().catch(() => null);
+        if (op) {
+          document.getElementById("metric-sales-today").textContent = formatCurrency(op.total_sales || 0);
+          document.getElementById("metric-sales-today-hint").textContent = op.closing_cash != null ? "Caja cerrada" : "Caja abierta";
+        } else {
+          document.getElementById("metric-sales-today").textContent = formatCurrency(0);
+          document.getElementById("metric-sales-today-hint").textContent = "Caja no abierta";
+        }
+      } catch (err) { console.error("[metrics:today]", err); }
+    }
+
+    async function loadRecentOrders() {
+      const body = document.getElementById("recent-orders-body");
+      try {
+        const orders = await window.api.listOrders({ limit: 10 });
+        const list = Array.isArray(orders) ? orders : (orders.items || []);
+        if (!list.length) {
+          body.innerHTML = `<tr><td colspan="5" style="text-align:center; color:var(--text-light);">Sin ordenes recientes.</td></tr>`;
+          return;
+        }
+        body.innerHTML = list.map(o => `
+          <tr>
+            <td><code>${escapeHtml(shortId(o.id))}</code></td>
+            <td>${escapeHtml(o.client_name || o.client_email || "—")}</td>
+            <td class="num">${formatCurrency(o.total)}</td>
+            <td>${statusBadge(o.status)}</td>
+            <td>${formatDate(o.created_at, true)}</td>
+          </tr>
+        `).join("");
+      } catch (err) {
+        console.error("[recentOrders]", err);
+        body.innerHTML = `<tr><td colspan="5" style="color:var(--danger);">Error: ${escapeHtml(err.message || "")}</td></tr>`;
+      }
+    }
+
+    async function loadSalesChart() {
+      try {
+        const data = await window.api.salesReport(7);
+        const series = Array.isArray(data) ? data : (data.series || data.items || []);
+        const labels = series.map(d => d.date || d.day || "");
+        const values = series.map(d => Number(d.total || d.sales || 0));
+        renderBarChart(document.getElementById("chart-sales-7d"), { labels, values }, { label: "Ventas" });
+      } catch (err) { console.error("[salesChart]", err); }
+    }
+
+    async function loadDashboard() {
+      await Promise.all([loadMetrics(), loadRecentOrders(), loadSalesChart()]);
+    }
+
+    (async () => {
+      currentUser = await requireAdmin(false);
+      if (!currentUser) return;
+      renderSidebar(currentUser);
+      await loadDashboard();
+    })();
+  </script>
+</body>
+</html>

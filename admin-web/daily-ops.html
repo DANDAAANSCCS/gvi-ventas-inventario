@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GVI Admin — Caja</title>
+  <link rel="stylesheet" href="css/admin.css?v=1">
+</head>
+<body>
+  <div class="app">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <div class="page-header">
+        <h1>Caja diaria</h1>
+        <div>
+          <button class="btn" onclick="loadAll()">🔄 Refrescar</button>
+        </div>
+      </div>
+
+      <section id="today-card"></section>
+
+      <div class="card" style="margin-top:1rem;">
+        <div class="card-header"><span>Historial (ultimos 30 dias)</span></div>
+        <div class="table-wrapper" style="border:none; border-radius:0;">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th class="num">Apertura</th>
+                <th class="num">Ventas</th>
+                <th class="num">Cierre</th>
+                <th class="num">Diferencia</th>
+                <th>Estado</th>
+                <th>Notas</th>
+              </tr>
+            </thead>
+            <tbody id="history-body">
+              <tr><td colspan="7" style="text-align:center; color:var(--text-light);">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api-client.js?v=1"></script>
+  <script src="js/utils.js?v=1"></script>
+  <script src="js/auth-admin.js?v=1"></script>
+  <script src="js/layout.js?v=1"></script>
+  <script>
+    let currentUser = null;
+    let todayOp = null;
+
+    function renderTodayCard() {
+      const container = document.getElementById("today-card");
+      if (!todayOp) {
+        container.innerHTML = `
+          <div class="card">
+            <div class="card-body" style="text-align:center; padding:2rem;">
+              <p style="color:var(--text-light);">La caja de hoy no ha sido abierta.</p>
+              <button class="btn btn-primary btn-lg" onclick="openCashModal()">💰 Abrir caja</button>
+            </div>
+          </div>`;
+        return;
+      }
+      const diff = todayOp.is_closed
+        ? Number(todayOp.closing_cash) - (Number(todayOp.opening_cash) + Number(todayOp.total_sales))
+        : null;
+      container.innerHTML = `
+        <div class="card">
+          <div class="card-header">
+            <span>Caja de hoy — ${formatDate(todayOp.date)}</span>
+            ${todayOp.is_closed ? '<span class="badge badge-success">Cerrada</span>' : '<span class="badge badge-warning">Abierta</span>'}
+          </div>
+          <div class="card-body">
+            <div class="metric-grid">
+              <div class="metric">
+                <p class="metric-label">Apertura</p>
+                <p class="metric-value">${formatCurrency(todayOp.opening_cash)}</p>
+              </div>
+              <div class="metric">
+                <p class="metric-label">Ventas del dia</p>
+                <p class="metric-value">${formatCurrency(todayOp.total_sales)}</p>
+              </div>
+              ${todayOp.is_closed ? `
+                <div class="metric">
+                  <p class="metric-label">Cierre real</p>
+                  <p class="metric-value">${formatCurrency(todayOp.closing_cash)}</p>
+                </div>
+                <div class="metric ${Math.abs(diff) < 0.01 ? '' : (diff > 0 ? 'warning' : 'danger')}">
+                  <p class="metric-label">Diferencia</p>
+                  <p class="metric-value">${diff >= 0 ? "+" : ""}${formatCurrency(diff)}</p>
+                  <p class="metric-delta">${Math.abs(diff) < 0.01 ? "Cuadra" : (diff > 0 ? "Sobrante" : "Faltante")}</p>
+                </div>
+              ` : `
+                <div class="metric">
+                  <p class="metric-label">Esperado en caja</p>
+                  <p class="metric-value">${formatCurrency(Number(todayOp.opening_cash) + Number(todayOp.total_sales))}</p>
+                </div>
+              `}
+            </div>
+            ${todayOp.notes ? `<p style="margin-top:1rem;"><strong>Notas:</strong> ${escapeHtml(todayOp.notes)}</p>` : ""}
+            ${!todayOp.is_closed ? `
+              <div style="margin-top:1rem;">
+                <button class="btn btn-primary btn-lg" onclick="closeCashModal()">🔒 Cerrar caja</button>
+              </div>` : ""}
+          </div>
+        </div>`;
+    }
+
+    async function loadToday() {
+      try {
+        todayOp = await window.api.getTodayOp();
+      } catch (err) {
+        if (err.status === 404) todayOp = null;
+        else console.error("[today]", err);
+      }
+      renderTodayCard();
+    }
+
+    async function loadHistory() {
+      const body = document.getElementById("history-body");
+      try {
+        const ops = await window.api.listDailyOps({ limit: 30 });
+        if (!ops.length) {
+          body.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-light);">Sin registros.</td></tr>`;
+          return;
+        }
+        body.innerHTML = ops.map(op => {
+          const diff = op.is_closed
+            ? Number(op.closing_cash) - (Number(op.opening_cash) + Number(op.total_sales))
+            : null;
+          return `
+            <tr>
+              <td>${formatDate(op.date)}</td>
+              <td class="num">${formatCurrency(op.opening_cash)}</td>
+              <td class="num">${formatCurrency(op.total_sales)}</td>
+              <td class="num">${op.closing_cash != null ? formatCurrency(op.closing_cash) : "—"}</td>
+              <td class="num" style="${diff != null && Math.abs(diff) >= 0.01 ? (diff < 0 ? 'color:var(--danger);' : 'color:var(--warning);') : ''}">${diff != null ? (diff >= 0 ? "+" : "") + formatCurrency(diff) : "—"}</td>
+              <td>${op.is_closed ? '<span class="badge badge-success">Cerrada</span>' : '<span class="badge badge-warning">Abierta</span>'}</td>
+              <td>${escapeHtml(op.notes || "—")}</td>
+            </tr>`;
+        }).join("");
+      } catch (err) {
+        console.error("[history]", err);
+        body.innerHTML = `<tr><td colspan="7" style="color:var(--danger);">Error: ${escapeHtml(err.message || "")}</td></tr>`;
+      }
+    }
+
+    async function openCashModal() {
+      const res = await openModal({
+        title: "Abrir caja",
+        bodyHtml: `
+          <div class="form-group">
+            <label class="form-label">Efectivo en caja al inicio *</label>
+            <input class="form-control" name="opening_cash" type="number" min="0" step="0.01" required value="0">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notas</label>
+            <textarea class="form-control" name="notes" rows="2"></textarea>
+          </div>
+        `,
+        confirmText: "Abrir caja",
+        onConfirm: async (body) => {
+          const v = getFormValues(body);
+          if (v.opening_cash == null) throw new Error("Monto de apertura obligatorio.");
+          return await window.api.openCash({ opening_cash: v.opening_cash, notes: v.notes || null });
+        },
+      });
+      if (res) { showToast("Caja abierta", "success"); await loadAll(); }
+    }
+
+    async function closeCashModal() {
+      if (!todayOp) return;
+      const expected = Number(todayOp.opening_cash) + Number(todayOp.total_sales);
+      const res = await openModal({
+        title: "Cerrar caja",
+        bodyHtml: `
+          <p>Efectivo esperado: <strong>${formatCurrency(expected)}</strong></p>
+          <div class="form-group">
+            <label class="form-label">Efectivo real en caja *</label>
+            <input class="form-control" name="closing_cash" type="number" min="0" step="0.01" required value="${expected.toFixed(2)}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Notas</label>
+            <textarea class="form-control" name="notes" rows="2">${escapeHtml(todayOp.notes || "")}</textarea>
+          </div>
+        `,
+        confirmText: "Cerrar caja",
+        onConfirm: async (body) => {
+          const v = getFormValues(body);
+          if (v.closing_cash == null) throw new Error("Monto de cierre obligatorio.");
+          return await window.api.closeCash(todayOp.id, { closing_cash: v.closing_cash, notes: v.notes || null });
+        },
+      });
+      if (res) { showToast("Caja cerrada", "success"); await loadAll(); }
+    }
+
+    async function loadAll() {
+      await Promise.all([loadToday(), loadHistory()]);
+    }
+
+    (async () => {
+      currentUser = await requireAdmin(false);
+      if (!currentUser) return;
+      renderSidebar(currentUser);
+      await loadAll();
+    })();
+  </script>
+</body>
+</html>

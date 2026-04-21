@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GVI DB Manager</title>
+  <link rel="stylesheet" href="css/db.css?v=1">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>🗄️ GVI DB Manager</h1>
+        <small>Tablas de la base</small>
+      </div>
+      <div class="sidebar-section">
+        <span>Tablas</span>
+        <button class="btn btn-sm" id="btn-refresh-tables" title="Refrescar">🔄</button>
+      </div>
+      <div class="table-list" id="table-list">
+        <div style="padding: .5rem; color: var(--text-muted); font-size: .82rem;">Cargando...</div>
+      </div>
+      <div class="sidebar-footer">
+        <div class="user-info" id="user-info"></div>
+        <button onclick="logout()">Cerrar sesion</button>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="topbar">
+        <h2 id="table-title">Selecciona una tabla</h2>
+        <div class="tabs">
+          <button class="active" data-tab="data">Data</button>
+          <button data-tab="schema">Schema</button>
+          <button data-tab="sql">SQL</button>
+        </div>
+      </div>
+
+      <div class="tab-content">
+        <div id="data-pane" class="tab-pane active" style="flex:1;">
+          <div style="padding:2rem; text-align:center; color:var(--text-muted);">Selecciona una tabla en el sidebar.</div>
+        </div>
+        <div id="schema-pane" class="tab-pane">
+          <div style="padding:2rem; text-align:center; color:var(--text-muted);">Selecciona una tabla para ver su schema.</div>
+        </div>
+        <div id="sql-pane" class="tab-pane"></div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api-client.js?v=1"></script>
+  <script src="js/utils.js?v=1"></script>
+  <script src="js/auth-admin.js?v=1"></script>
+  <script src="js/schema-viewer.js?v=1"></script>
+  <script src="js/table-grid.js?v=1"></script>
+  <script src="js/sql-editor.js?v=1"></script>
+  <script>
+    let currentUser = null;
+    let activeTable = null;
+    let tables = [];
+
+    async function loadTables() {
+      const box = document.getElementById("table-list");
+      try {
+        tables = await window.api.tables();
+        if (!tables.length) {
+          box.innerHTML = `<div style="padding: .5rem; color: var(--text-muted); font-size: .82rem;">Sin tablas.</div>`;
+          return;
+        }
+        box.innerHTML = tables.map(t => `
+          <button data-table="${escapeHtml(t.name)}" class="${t.name === activeTable ? 'active' : ''}">
+            <span><span class="icon">▸</span>${escapeHtml(t.name)}</span>
+            <span class="count">${t.row_count.toLocaleString()}</span>
+          </button>
+        `).join("");
+        box.querySelectorAll("button[data-table]").forEach(b => {
+          b.addEventListener("click", () => selectTable(b.dataset.table));
+        });
+      } catch (err) {
+        console.error("[tables]", err);
+        box.innerHTML = `<div style="padding:.5rem; color:var(--danger); font-size:.82rem;">Error: ${escapeHtml(err.message || "")}</div>`;
+      }
+    }
+
+    function selectTable(name) {
+      activeTable = name;
+      document.querySelectorAll("#table-list button").forEach(b =>
+        b.classList.toggle("active", b.dataset.table === name)
+      );
+      document.getElementById("table-title").innerHTML = `<code>${escapeHtml(name)}</code>`;
+      const activeTab = document.querySelector(".tabs button.active")?.dataset.tab || "data";
+      if (activeTab === "data") TableGrid.load(name);
+      else if (activeTab === "schema") SchemaViewer.load(name);
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+      document.querySelectorAll(".tab-pane").forEach(p => p.classList.toggle("active", p.id === `${tab}-pane`));
+      if (!activeTable && tab !== "sql") return;
+      if (tab === "data") TableGrid.load(activeTable);
+      else if (tab === "schema") SchemaViewer.load(activeTable);
+      else if (tab === "sql") SqlEditor.init();
+    }
+
+    (async () => {
+      currentUser = await requireAdminOnly();
+      if (!currentUser) return;
+      document.getElementById("user-info").textContent = `👤 ${currentUser.email}`;
+
+      document.querySelectorAll(".tabs button").forEach(b =>
+        b.addEventListener("click", () => switchTab(b.dataset.tab))
+      );
+      document.getElementById("btn-refresh-tables").addEventListener("click", loadTables);
+
+      SqlEditor.init(); // inicializa el pane SQL (para que se cargue el historial aunque no este visible)
+      await loadTables();
+    })();
+  </script>
+</body>
+</html>

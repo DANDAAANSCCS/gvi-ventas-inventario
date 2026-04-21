@@ -25,21 +25,21 @@ Gestion_ventas_inventario/
 │   ├── seed.py           # admin + 15 productos demo
 │   ├── Dockerfile
 │   └── requirements.txt
-├── client/               # SPA estática
-│   ├── index.html        # catálogo
-│   ├── login.html  register.html  orders.html  history.html  terms.html
-│   ├── css/styles.css
-│   ├── js/
-│   │   ├── config.js         # window.API_URL (inyectado en runtime)
-│   │   ├── api-client.js     # wrapper fetch + JWT
-│   │   ├── auth.js           # sesión cliente
-│   │   ├── catalog.js  cart.js  history.js  utils.js
-│   ├── nginx.conf
-│   ├── nginx-entrypoint.sh   # escribe js/config.js con API_URL
-│   └── Dockerfile
+├── client/               # SPA publica (catálogo y compra cliente final)
+│   ├── index.html  login.html  register.html  orders.html  history.html  terms.html
+│   ├── css/  js/  nginx.conf  nginx-entrypoint.sh  Dockerfile
+├── admin-web/            # Panel admin web (staff/admin) — reemplaza al tkinter
+│   ├── login.html  dashboard.html  products.html  clients.html  orders.html
+│   ├── inventory.html  daily-ops.html  reports.html  users.html
+│   ├── css/admin.css  js/(api-client, auth-admin, utils, layout, charts, config).js
+│   ├── nginx.conf  nginx-entrypoint.sh  Dockerfile
+├── db-web/               # DB manager estilo Railway (solo admin)
+│   ├── login.html  index.html
+│   ├── css/db.css  js/(api-client, auth-admin, utils, schema-viewer, table-grid, sql-editor, config).js
+│   ├── nginx.conf  nginx-entrypoint.sh  Dockerfile
 ├── db/schema.sql         # DDL PostgreSQL (3FN, FKs, CHECK, índices)
 ├── docker-compose.yml    # dev local
-└── admin/                # app Tkinter (pendiente de migrar a la API)
+└── admin/                # app Tkinter original (legacy, se puede retirar)
 ```
 
 ## Dev local
@@ -49,7 +49,9 @@ docker compose up -d --build
 docker compose exec backend python seed.py
 ```
 
-- Frontend: http://localhost:8180
+- Cliente publico: http://localhost:8180
+- Panel admin web: http://localhost:8181 (login con admin/staff)
+- DB manager: http://localhost:8182 (login solo con admin)
 - API: http://localhost:8100/docs
 - Admin por defecto: `admin@gvi.com` / `Admin123!`
 
@@ -64,19 +66,36 @@ Ver `backend/.env.example`. Claves:
 
 ## Deploy en Coolify
 
+Un solo backend alimenta 3 frontends desplegados en subdominios distintos.
+
+| Servicio | Subdominio | Build context | Env vars |
+|----------|-----------|---------------|----------|
+| Backend API | `api-gvi.namu-li.com` | `backend/` | `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS`, `ADMIN_EMAIL`, `ADMIN_PASSWORD` |
+| Cliente publico | `gvi.namu-li.com` | `client/` | `API_URL=https://api-gvi.namu-li.com` |
+| Panel admin | `admin.gvi.namu-li.com` | `admin-web/` | `API_URL=https://api-gvi.namu-li.com` |
+| DB manager | `db.gvi.namu-li.com` | `db-web/` | `API_URL=https://api-gvi.namu-li.com` |
+
+### Pasos
+
 1. Crear recurso **PostgreSQL 16**.
-2. Crear servicio backend (build desde `backend/Dockerfile`) apuntando a `api-gvi.namu-li.com`.
-   Inyectar `DATABASE_URL`, `JWT_SECRET`, `CORS_ORIGINS=https://gvi.namu-li.com`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`.
-3. Crear servicio frontend (build desde `client/Dockerfile`) apuntando a `gvi.namu-li.com`.
-   Inyectar `API_URL=https://api-gvi.namu-li.com`.
-4. Ejecutar schema en la BD:
+2. Crear servicio backend apuntando a `api-gvi.namu-li.com`. En `CORS_ORIGINS` incluir los 3 origenes separados por coma:
+   ```
+   CORS_ORIGINS=https://gvi.namu-li.com,https://admin.gvi.namu-li.com,https://db.gvi.namu-li.com
+   ```
+3. Crear servicio **cliente publico** (build `client/Dockerfile`) con `API_URL=https://api-gvi.namu-li.com`.
+4. Crear servicio **admin-web** (build `admin-web/Dockerfile`) con `API_URL=https://api-gvi.namu-li.com`. Apuntar DNS de `admin.gvi.namu-li.com` al servidor.
+5. Crear servicio **db-web** (build `db-web/Dockerfile`) con `API_URL=https://api-gvi.namu-li.com`. Apuntar DNS de `db.gvi.namu-li.com` al servidor.
+6. Ejecutar schema en la BD:
    ```bash
    psql $DATABASE_URL < db/schema.sql
    ```
-5. Ejecutar seed desde la terminal del backend:
+7. Ejecutar seed desde la terminal del backend:
    ```bash
    python seed.py
    ```
+
+### Autobuild en git push
+Coolify detecta pushes a la rama configurada y rebuilda solo los servicios cuyo `build context` contenga cambios. Mantener las 3 webs como servicios separados evita rebuilds innecesarios.
 
 ## Seguridad (checklist requisitos del examen)
 

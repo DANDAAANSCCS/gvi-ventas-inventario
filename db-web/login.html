@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GVI DB Manager — Login</title>
+  <link rel="stylesheet" href="css/db.css?v=1">
+</head>
+<body class="login-page">
+  <div class="login-box">
+    <div style="text-align:center; font-size:2rem; margin-bottom:.5rem;">🗄️</div>
+    <h1>GVI DB Manager</h1>
+    <p class="subtitle">Acceso administrativo a la base de datos</p>
+    <form id="login-form">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input class="input" type="email" id="email" name="email" required autocomplete="username" placeholder="admin@gvi.com">
+      </div>
+      <div class="form-group">
+        <label for="password">Contraseña</label>
+        <input class="input" type="password" id="password" name="password" required autocomplete="current-password">
+      </div>
+      <div id="alert-box" class="login-alert" style="display:none;"></div>
+      <button type="submit" class="btn primary" id="login-btn" style="width:100%; justify-content:center; padding:.55rem;">Ingresar</button>
+    </form>
+    <p class="subtitle" style="margin-top:1.5rem; margin-bottom:0; font-size:.72rem;">Solo usuarios con rol <code style="color:var(--accent);">admin</code>.</p>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api-client.js?v=1"></script>
+  <script src="js/utils.js?v=1"></script>
+  <script>
+    (async () => {
+      if (window.apiAuth.getToken()) {
+        try {
+          const user = await window.api.me();
+          if (user.role === "admin") { window.location.href = "index.html"; return; }
+        } catch (_) { window.apiAuth.clearSession(); }
+      }
+    })();
+
+    const form = document.getElementById("login-form");
+    const alertBox = document.getElementById("alert-box");
+    const btn = document.getElementById("login-btn");
+
+    function showError(msg) { alertBox.textContent = msg; alertBox.style.display = "block"; }
+    function hideError() { alertBox.style.display = "none"; }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      hideError();
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+      if (!email || !password) { showError("Completa email y contraseña."); return; }
+      const original = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Ingresando...";
+      try {
+        const res = await window.api.login(email, password);
+        if (!res || !res.user) throw new Error("Respuesta invalida del servidor.");
+        if (res.user.role !== "admin") {
+          window.apiAuth.clearSession();
+          throw new Error("Solo usuarios admin pueden acceder al DB manager.");
+        }
+        window.location.href = "index.html";
+      } catch (err) {
+        console.error("[login]", err);
+        showError(err.message || "Error al iniciar sesion.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+  </script>
+</body>
+</html>

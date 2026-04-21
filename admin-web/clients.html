@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GVI Admin — Clientes</title>
+  <link rel="stylesheet" href="css/admin.css?v=1">
+</head>
+<body>
+  <div class="app">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main class="main">
+      <div class="page-header">
+        <h1>Clientes</h1>
+        <div>
+          <button class="btn btn-primary" onclick="openCreateModal()">➕ Nuevo cliente</button>
+        </div>
+      </div>
+
+      <div class="toolbar">
+        <input id="q" class="form-control" placeholder="Buscar por nombre o email...">
+        <label style="display:flex; align-items:center; gap:.4rem; font-size:.9rem;">
+          <input type="checkbox" id="only-active" checked> Solo activos
+        </label>
+      </div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Nombre</th>
+              <th>Email</th>
+              <th>Telefono</th>
+              <th>Direccion</th>
+              <th>Estado</th>
+              <th>Creado</th>
+              <th>Acciones</th>
+            </tr>
+          </thead>
+          <tbody id="clients-body">
+            <tr><td colspan="7" style="text-align:center; color:var(--text-light);">Cargando...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/api-client.js?v=1"></script>
+  <script src="js/utils.js?v=1"></script>
+  <script src="js/auth-admin.js?v=1"></script>
+  <script src="js/layout.js?v=1"></script>
+  <script>
+    let currentUser = null;
+
+    async function loadClients() {
+      const body = document.getElementById("clients-body");
+      const params = {
+        q: document.getElementById("q").value.trim() || undefined,
+        only_active: document.getElementById("only-active").checked,
+      };
+      try {
+        const clients = await window.api.listClients(params);
+        if (!clients.length) {
+          body.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--text-light);">Sin resultados.</td></tr>`;
+          return;
+        }
+        body.innerHTML = clients.map(c => `
+          <tr>
+            <td><strong>${escapeHtml(c.name)}</strong></td>
+            <td>${escapeHtml(c.email || "—")}</td>
+            <td>${escapeHtml(c.phone || "—")}</td>
+            <td>${escapeHtml(c.address || "—")}</td>
+            <td>${c.active ? '<span class="badge badge-success">Activo</span>' : '<span class="badge badge-secondary">Inactivo</span>'}</td>
+            <td>${formatDate(c.created_at)}</td>
+            <td class="actions">
+              <button class="btn btn-sm" onclick="openOrdersModal('${c.id}', '${escapeHtml(c.name).replace(/'/g, "\\'")}')">Pedidos</button>
+              <button class="btn btn-sm" onclick="openEditModal('${c.id}')">Editar</button>
+              ${c.active ? `<button class="btn btn-sm btn-danger" onclick="deleteClient('${c.id}', '${escapeHtml(c.name).replace(/'/g, "\\'")}')">Eliminar</button>` : ""}
+            </td>
+          </tr>
+        `).join("");
+      } catch (err) {
+        console.error("[listClients]", err);
+        body.innerHTML = `<tr><td colspan="7" style="color:var(--danger);">Error: ${escapeHtml(err.message || "")}</td></tr>`;
+      }
+    }
+
+    function clientFormHtml(c = {}, includeAuth = false) {
+      return `
+        <div class="form-group">
+          <label class="form-label">Nombre *</label>
+          <input class="form-control" name="name" required value="${escapeHtml(c.name || "")}">
+        </div>
+        ${includeAuth ? `
+          <div class="form-group">
+            <label class="form-label">Email *</label>
+            <input class="form-control" name="email" type="email" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Contraseña inicial *</label>
+            <input class="form-control" name="password" type="password" required minlength="6">
+          </div>
+        ` : ""}
+        <div class="form-group">
+          <label class="form-label">Telefono</label>
+          <input class="form-control" name="phone" value="${escapeHtml(c.phone || "")}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Direccion</label>
+          <input class="form-control" name="address" value="${escapeHtml(c.address || "")}">
+        </div>
+      `;
+    }
+
+    async function openCreateModal() {
+      const res = await openModal({
+        title: "Nuevo cliente",
+        bodyHtml: clientFormHtml({}, true),
+        confirmText: "Crear",
+        onConfirm: async (body) => {
+          const v = getFormValues(body);
+          if (!v.name || !v.email || !v.password) throw new Error("Nombre, email y contraseña son obligatorios.");
+          if (!isValidEmail(v.email)) throw new Error("Email invalido.");
+          return await window.api.createClient({
+            name: v.name, email: v.email, password: v.password,
+            phone: v.phone || null, address: v.address || null,
+          });
+        },
+      });
+      if (res) { showToast("Cliente creado", "success"); loadClients(); }
+    }
+
+    async function openEditModal(id) {
+      const clients = await window.api.listClients({ only_active: false });
+      const c = clients.find(x => x.id === id);
+      if (!c) { showToast("Cliente no encontrado", "danger"); return; }
+      const res = await openModal({
+        title: `Editar: ${c.name}`,
+        bodyHtml: clientFormHtml(c, false),
+        confirmText: "Guardar",
+        onConfirm: async (body) => {
+          const v = getFormValues(body);
+          return await window.api.updateClient(id, {
+            name: v.name, phone: v.phone || null, address: v.address || null,
+          });
+        },
+      });
+      if (res) { showToast("Cliente actualizado", "success"); loadClients(); }
+    }
+
+    async function deleteClient(id, name) {
+      const ok = await confirmDialog(`¿Eliminar a "${name}"? Su cuenta sera desactivada.`);
+      if (!ok) return;
+      try {
+        await window.api.deleteClient(id);
+        showToast("Cliente eliminado", "success");
+        loadClients();
+      } catch (err) { showToast(err.message || "Error", "danger"); }
+    }
+
+    async function openOrdersModal(clientId, name) {
+      // Cargar pedidos filtrando por cliente en memoria
+      const orders = await window.api.listOrders();
+      const mine = orders.filter(o => o.client_id === clientId);
+      const rows = mine.length ? mine.map(o => `
+        <tr>
+          <td><code>${escapeHtml(shortId(o.id))}</code></td>
+          <td class="num">${formatCurrency(o.total)}</td>
+          <td>${statusBadge(o.status)}</td>
+          <td>${formatDate(o.created_at, true)}</td>
+        </tr>
+      `).join("") : `<tr><td colspan="4" style="text-align:center; color:var(--text-light);">Sin pedidos.</td></tr>`;
+      await openModal({
+        title: `Pedidos de ${name}`,
+        bodyHtml: `
+          <div class="table-wrapper" style="max-height:400px; overflow-y:auto;">
+            <table>
+              <thead><tr><th>ID</th><th class="num">Total</th><th>Estado</th><th>Fecha</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>`,
+        confirmText: "Cerrar",
+        cancelText: "",
+        onConfirm: () => true,
+      });
+    }
+
+    (async () => {
+      currentUser = await requireAdmin(false);
+      if (!currentUser) return;
+      renderSidebar(currentUser);
+      await loadClients();
+      document.getElementById("q").addEventListener("input", debounce(loadClients, 300));
+      document.getElementById("only-active").addEventListener("change", loadClients);
+    })();
+  </script>
+</body>
+</html>
